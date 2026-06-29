@@ -155,6 +155,33 @@ export async function rejectApplication(id){
   DEMO_APPS = DEMO_APPS.filter(a=>a.id!==id);
 }
 
+/* ---------- admin: members ---------- */
+export async function listUsers(){
+  if(MODE === "postgres"){
+    const d = await req("/admin/users", { auth:true });
+    return { users:d.users || [], me:d.me };
+  }
+  return { users:DEMO_USERS.slice(), me:"demo-me" };
+}
+export async function blockUser(id){
+  if(MODE === "postgres") return req(`/admin/users/${id}/block`, { method:"POST", auth:true });
+  const u = DEMO_USERS.find(x=>x.id===id); if(u) u.is_blocked = true;
+}
+export async function unblockUser(id){
+  if(MODE === "postgres") return req(`/admin/users/${id}/unblock`, { method:"POST", auth:true });
+  const u = DEMO_USERS.find(x=>x.id===id); if(u) u.is_blocked = false;
+}
+export async function deleteUser(id){
+  if(MODE === "postgres") return req(`/admin/users/${id}`, { method:"DELETE", auth:true });
+  DEMO_USERS = DEMO_USERS.filter(x=>x.id!==id);
+}
+let DEMO_USERS = [
+  { id:"demo-me", handle:"you",       email:"you@example.org",    is_approved:true, is_admin:true,  is_blocked:false },
+  { id:"u-rosa",  handle:"rosa.l",    email:"rosa@example.org",   is_approved:true, is_admin:false, is_blocked:false },
+  { id:"u-mut",   handle:"mutual.aid",email:"aid@example.org",    is_approved:true, is_admin:false, is_blocked:false },
+  { id:"u-kro",   handle:"kropotkina",email:"kro@example.org",    is_approved:true, is_admin:false, is_blocked:true  }
+];
+
 /* Demo applications so the admin page is explorable without a backend. */
 let DEMO_APPS = [
   { id:"demo-1", handle:"@silvia", email:"silvia@example.org", origin:"Bologna housing co-op",

@@ -239,6 +239,8 @@ If your database/backend predate these features, upgrade an existing install:
 psql "postgresql://instagramsci:PASSWORD@127.0.0.1:5432/instagramsci" -f backend/migrate_2fa.sql
 # 1b) update the feed view for Amplify + comment counts (supersedes migrate_amplify.sql)
 psql "postgresql://instagramsci:PASSWORD@127.0.0.1:5432/instagramsci" -f backend/migrate_comments.sql
+# 1c) add the is_blocked column for member management
+psql "postgresql://instagramsci:PASSWORD@127.0.0.1:5432/instagramsci" -f backend/migrate_block.sql
 # 2) install the new dependency (pyotp) and restart the API
 cd /var/www/instagramsci/backend && . venv/bin/activate && pip install -r requirements.txt
 sudo service instagramsci-api restart
@@ -254,6 +256,10 @@ small library loaded on demand, so no server-side QR dependency is needed.
   and their account is created but **unapproved** (they can read, not post).
 - You open **Member review**, read their intentions, click **Approve** → posting
   unlocks for them.
+- **Members** (admin sidebar) lists everyone approved. **Block** suspends an
+  account — they can't log in or post, but their content stays; **Unblock**
+  restores it. **Delete** removes the account and all its posts/comments (FK
+  cascade). You can't block or delete your own admin account.
 - Approved members post (image upload → `backend/uploads/`, served at `/uploads/`).
 
 ## Backups

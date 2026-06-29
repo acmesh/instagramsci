@@ -17,6 +17,7 @@ create table if not exists users (
   avatar_url    text,
   is_approved   boolean not null default false,
   is_admin      boolean not null default false,
+  is_blocked    boolean not null default false,
   totp_secret   text,                         -- active TOTP secret (when 2FA on)
   totp_pending  text,                         -- secret awaiting first-code confirmation
   totp_enabled  boolean not null default false,

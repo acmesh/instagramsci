@@ -69,6 +69,7 @@ page, which unlocks posting for that member.
 - **Two-factor auth** (TOTP): enable with an authenticator app; logins then require a 6-digit code
 - **Reactions** (Resonate / Collect / Amplify): persist per user — your choices stay highlighted across reloads
 - **Comments**: Discuss opens a thread under each post; approved members can reply
+- **Admin tools**: review applications, and a Members page to block/unblock or delete approved users
 
 ## The first post
 

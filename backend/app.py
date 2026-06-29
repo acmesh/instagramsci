@@ -103,7 +103,8 @@ def current_user():
     if not uid:
         return None
     return q("select id, email, handle, display_name, bio, avatar_url, pronouns, "
-             "is_approved, is_admin, totp_enabled from users where id=%s", (uid,), one=True)
+             "is_approved, is_admin, is_blocked, totp_enabled from users where id=%s",
+             (uid,), one=True)
 
 def require(approved=False, admin=False):
     def deco(fn):
@@ -112,6 +113,8 @@ def require(approved=False, admin=False):
             u = current_user()
             if not u:
                 return jsonify(error="Not signed in."), 401
+            if u.get("is_blocked"):
+                return jsonify(error="Your account has been blocked."), 403
             if admin and not u["is_admin"]:
                 return jsonify(error="Admins only."), 403
             if approved and not u["is_approved"]:
@@ -127,6 +130,7 @@ def public_user(u):
         "display_name": u.get("display_name"), "bio": u.get("bio"),
         "avatar_url": u.get("avatar_url"), "pronouns": u.get("pronouns"),
         "is_approved": u.get("is_approved"), "is_admin": u.get("is_admin"),
+        "is_blocked": bool(u.get("is_blocked")),
         "has_2fa": bool(u.get("totp_enabled")),
     }
 
@@ -171,6 +175,8 @@ def login():
     user = q("select * from users where email=%s", (email,), one=True)
     if not user or not check_password_hash(user["password_hash"], d.get("password") or ""):
         return jsonify(error="Wrong email or password."), 401
+    if user.get("is_blocked"):
+        return jsonify(error="This account has been blocked."), 403
     # Second factor: if 2FA is on, a valid TOTP code is required. We return 200
     # with twofa_required so the client can prompt for the code (not a 401).
     if user.get("totp_enabled"):
@@ -400,6 +406,39 @@ def reject(app_id):
             (g.user["id"], app_id), one=True, commit=True)
     if row:
         q("update users set is_approved=false where id=%s", (row["user_id"],), commit=True)
+    return jsonify(ok=True)
+
+# ---------------------------------------------------------------- admin: members
+@app.get("/admin/users")
+@require(admin=True)
+def list_users():
+    # Members = anyone approved or blocked (i.e. not just a pending applicant).
+    rows = q("select id, handle, email, is_approved, is_admin, is_blocked, created_at "
+             "from users where is_approved = true or is_blocked = true "
+             "order by is_admin desc, handle asc")
+    return jsonify(users=rows, me=g.user["id"])
+
+@app.post("/admin/users/<int:uid>/block")
+@require(admin=True)
+def block_user(uid):
+    if uid == g.user["id"]:
+        return jsonify(error="You can't block your own account."), 400
+    q("update users set is_blocked = true where id=%s", (uid,), commit=True)
+    return jsonify(ok=True)
+
+@app.post("/admin/users/<int:uid>/unblock")
+@require(admin=True)
+def unblock_user(uid):
+    q("update users set is_blocked = false where id=%s", (uid,), commit=True)
+    return jsonify(ok=True)
+
+@app.delete("/admin/users/<int:uid>")
+@require(admin=True)
+def delete_user(uid):
+    if uid == g.user["id"]:
+        return jsonify(error="You can't delete your own account."), 400
+    # FK cascades remove the user's posts, reactions, comments, follows, application.
+    q("delete from users where id=%s", (uid,), commit=True)
     return jsonify(ok=True)
 
 # ---------------------------------------------------------------- uploaded files

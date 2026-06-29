@@ -119,8 +119,10 @@ function openProfile(){
 function renderAuth(){
   const signedIn = Auth.isSignedIn();
   const p = Auth.currentProfile();
-  // show admin entry to real admins; also in demo mode so it can be previewed
-  $("#navAdmin").style.display = (Auth.isAdmin() || !LIVE) ? "flex" : "none";
+  // show admin entries to real admins; also in demo mode so they can be previewed
+  const adminish = Auth.isAdmin() || !LIVE;
+  $("#navAdmin").style.display = adminish ? "flex" : "none";
+  $("#navUsers").style.display = adminish ? "flex" : "none";
   $("#navSettings").style.display = (Auth.isSignedIn() || !LIVE) ? "flex" : "none";
 
   const box = $("#authArea");
@@ -139,6 +141,15 @@ function renderAuth(){
       <button class="navitem" data-go="login"><span class="ic">→</span> Log in</button>
       <button class="navitem" data-go="join"><span class="ic">✎</span> Apply to join</button>`;
   }
+
+  // Topbar control — always visible (works on mobile where the rail is hidden)
+  const top = $("#authTop");
+  if(top){
+    top.innerHTML = signedIn
+      ? `<button class="topauth" data-go="profile" title="Your profile">@${esc(p.handle)}</button>
+         <button class="topauth ghost" data-auth="logout">Log out</button>`
+      : `<button class="topauth" data-go="login">Log in</button>`;
+  }
 }
 
 /* Can the current user act (post/react)? In demo mode, allow everything. */
@@ -152,7 +163,8 @@ function requireApproval(){
 
 /* ===================== VIEWS ===================== */
 const TITLES={feed:"Home",explore:"Explore",compose:"Compose",profile:"Profile",
-  manifesto:"Manifesto",join:"Apply to join",login:"Log in",admin:"Member review"};
+  manifesto:"Manifesto",join:"Apply to join",login:"Log in",admin:"Member review",
+  users:"Members",settings:"Settings"};
 function go(view){
   document.body.classList.add("in-app");
   $$(".view").forEach(v=>v.classList.remove("active"));
@@ -162,6 +174,7 @@ function go(view){
   $$(".rail .navitem").forEach(n=>n.classList.toggle("active", n.dataset.go===view));
   $$(".bottombar button").forEach(n=>n.classList.toggle("active", n.dataset.go===view));
   if(view==="admin") renderAdmin();
+  if(view==="users") renderUsers();
   if(view==="settings") openSettings();
   if(view==="profile") openProfile();
   window.scrollTo({top:0});
@@ -343,6 +356,34 @@ async function renderAdmin(){
     </div>`).join("");
 }
 
+/* ===================== MEMBERS (admin) ===================== */
+let MY_ID = null;   // current admin's user id (to protect own row)
+async function renderUsers(){
+  const wrap=$("#usersList");
+  if(LIVE && !Auth.isAdmin()){ wrap.innerHTML=`<p class="sub">Admins only.</p>`; return; }
+  wrap.innerHTML=`<p class="sub">Loading members…</p>`;
+  let users=[], me=null;
+  try{ ({users, me}=await API.listUsers()); }
+  catch(e){ wrap.innerHTML=`<p class="sub">Couldn't load members: ${esc(e.message)}</p>`; return; }
+  MY_ID=me;
+  if(!users.length){ wrap.innerHTML=`<p class="sub">No approved members yet.</p>`; return; }
+  wrap.innerHTML=users.map(u=>{
+    const self=u.id===me;
+    const chip=u.is_admin?`<span class="statuschip ok">admin</span>`
+      :u.is_blocked?`<span class="statuschip wait">blocked</span>`
+      :`<span class="statuschip ok">active</span>`;
+    const actions=self?`<span class="hint">that's you</span>`:`
+      ${u.is_blocked
+        ? `<button class="btn ghost" data-unblock="${esc(u.id)}">Unblock</button>`
+        : `<button class="btn ghost" data-block="${esc(u.id)}">Block</button>`}
+      <button class="btn danger" data-deluser="${esc(u.id)}" data-handle="${esc(u.handle)}">Delete</button>`;
+    return `<div class="userrow" data-user="${esc(u.id)}">
+      <div class="uinfo"><b>@${esc(u.handle)}</b> ${chip}<br><small>${esc(u.email||"")}</small></div>
+      <div class="uactions">${actions}</div>
+    </div>`;
+  }).join("");
+}
+
 /* ===================== INIT ===================== */
 async function init(){
   initTheme();
@@ -376,6 +417,18 @@ async function init(){
     if(ap){ await API.approveApplication(ap.dataset.approve); flash("Approved ✦"); renderAdmin(); return; }
     const rj=e.target.closest("[data-reject]");
     if(rj){ await API.rejectApplication(rj.dataset.reject); flash("Rejected"); renderAdmin(); return; }
+    const bl=e.target.closest("[data-block]");
+    if(bl){ try{ await API.blockUser(bl.dataset.block); flash("Member blocked."); }catch(err){ flash(err.message); } renderUsers(); return; }
+    const ub=e.target.closest("[data-unblock]");
+    if(ub){ try{ await API.unblockUser(ub.dataset.unblock); flash("Member unblocked."); }catch(err){ flash(err.message); } renderUsers(); return; }
+    const du=e.target.closest("[data-deluser]");
+    if(du){
+      if(confirm(`Delete @${du.dataset.handle}? This removes their account and all their posts and comments. This cannot be undone.`)){
+        try{ await API.deleteUser(du.dataset.deluser); flash("Member deleted."); }catch(err){ flash(err.message); }
+        renderUsers();
+      }
+      return;
+    }
   });
 
   $$("#feedTabs .tab").forEach(t=>t.addEventListener("click",()=>{

@@ -24,9 +24,11 @@
     <div class="ctas">
       <button class="btn ochre big" data-go="feed">Enter the feed</button>
       <button class="btn ghost big" data-go="join">Apply to join</button>
+      <button class="btn ghost big" data-go="login">Log in</button>
     </div>
     <div class="foot">
       Anyone can read. Posting is for approved members — <a href="#join" data-go="join">apply here</a>.
+      &nbsp;·&nbsp; <a href="#login" data-go="login">Log in</a>
       &nbsp;·&nbsp; <a href="#manifesto" data-go="manifesto">Read the Manifesto</a>
     </div>
   </div>
@@ -47,6 +49,7 @@
     <button class="navitem" data-go="manifesto"><span class="ic">✦</span> Manifesto</button>
     <button class="navitem" id="navSettings" data-go="settings" style="display:none"><span class="ic">⚙</span> Settings</button>
     <button class="navitem" id="navAdmin" data-go="admin" style="display:none"><span class="ic">⚖</span> Member review</button>
+    <button class="navitem" id="navUsers" data-go="users" style="display:none"><span class="ic">☷</span> Members</button>
     <div class="spacer"></div>
     <button class="themebtn" data-theme-toggle aria-label="Toggle colour theme">
       <span id="themeIcon">☾</span> <span id="themeLabel">Dark mode</span>
@@ -62,6 +65,7 @@
         <button class="tab active" data-tab="latest">Latest</button>
         <button class="tab" data-tab="commons">Commons</button>
       </div>
+      <div id="authTop"></div>
     </div>
 
     <!-- FEED -->
@@ -249,6 +253,15 @@
         <h2>Member review</h2>
         <div class="sub">Read each applicant's intentions, then approve or reject. Approving activates posting for that account.</div>
         <div id="adminList"></div>
+      </div>
+    </section>
+
+    <!-- ADMIN: MEMBERS -->
+    <section class="view" id="view-users">
+      <div class="formwrap">
+        <h2>Members</h2>
+        <div class="sub">Approved members. <b>Block</b> suspends access (the account and its posts stay); <b>Delete</b> removes the account and all its content. Both are irreversible for the user without you.</div>
+        <div id="usersList"></div>
       </div>
     </section>
 
