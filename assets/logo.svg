@@ -1,0 +1,19 @@
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Instagramsci logo">
+  <title>Instagramsci</title>
+  <!-- ochre roundel -->
+  <circle cx="32" cy="32" r="31" fill="#D0A640"/>
+  <circle cx="32" cy="32" r="31" fill="none" stroke="#150303" stroke-opacity=".15" stroke-width="2"/>
+  <!-- aperture iris (camera nod + 'many parts, one whole') -->
+  <g fill="#2A2A33">
+    <path d="M 32.0 5.0 A 27 27 0 0 1 55.38 18.5 L 41.53 26.5 Z"/>
+    <path d="M 55.38 18.5 A 27 27 0 0 1 55.38 45.5 L 41.53 37.5 Z"/>
+    <path d="M 55.38 45.5 A 27 27 0 0 1 32.0 59.0 L 32.0 43.0 Z"/>
+    <path d="M 32.0 59.0 A 27 27 0 0 1 8.62 45.5 L 22.47 37.5 Z"/>
+    <path d="M 8.62 45.5 A 27 27 0 0 1 8.62 18.5 L 22.47 26.5 Z"/>
+    <path d="M 8.62 18.5 A 27 27 0 0 1 32.0 5.0 L 32.0 21.0 Z"/>
+  </g>
+  <!-- inner hex opening -->
+  <circle cx="32" cy="32" r="8.5" fill="#D0A640"/>
+  <!-- brick center: the spark / red thread -->
+  <circle cx="32" cy="32" r="4" fill="#B23A2E"/>
+</svg>
