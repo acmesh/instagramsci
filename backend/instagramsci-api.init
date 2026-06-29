@@ -1,0 +1,68 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          instagramsci-api
+# Required-Start:    $network $local_fs $remote_fs postgresql
+# Required-Stop:     $network $local_fs $remote_fs
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Instagramsci API (gunicorn)
+### END INIT INFO
+#
+# Install:
+#   sudo cp backend/instagramsci-api.init /etc/init.d/instagramsci-api
+#   sudo chmod +x /etc/init.d/instagramsci-api
+#   sudo update-rc.d instagramsci-api defaults
+#   sudo service instagramsci-api start
+#   sudo service instagramsci-api status   # if not running, read $LOG below
+#
+# This version captures gunicorn's stdout/stderr to a logfile, so startup
+# failures are visible (the classic --background pitfall hides them).
+
+DIR=/var/www/instagramsci/backend
+USER=www-data
+GUNICORN="$DIR/venv/bin/gunicorn"
+BIND=127.0.0.1:8077
+WORKERS=2
+PID=/run/instagramsci-api.pid
+LOG=/var/log/instagramsci-api.log
+# --no-control-socket: don't open gunicorn's control socket, which it otherwise
+# tries to create under the service user's HOME ($HOME/.gunicorn). www-data's
+# home is /var/www (not writable by it), which would abort startup.
+GOPTS="--no-control-socket"
+
+start() {
+  echo "Starting instagramsci-api..."
+  touch "$LOG" && chown "$USER" "$LOG"
+  # --startas /bin/sh ... 'exec gunicorn >> LOG 2>&1' so errors are logged.
+  # --chdir so 'app:app' imports; --chuid to drop privileges.
+  start-stop-daemon --start --quiet --background \
+    --make-pidfile --pidfile "$PID" \
+    --chuid "$USER" --chdir "$DIR" \
+    --startas /bin/sh -- -c \
+    "exec '$GUNICORN' $GOPTS -w $WORKERS -b $BIND app:app >> '$LOG' 2>&1"
+  sleep 1
+  status
+}
+
+stop() {
+  echo "Stopping instagramsci-api..."
+  start-stop-daemon --stop --quiet --pidfile "$PID" --retry 5 2>/dev/null
+  rm -f "$PID"
+}
+
+status() {
+  if [ -f "$PID" ] && kill -0 "$(cat "$PID" 2>/dev/null)" 2>/dev/null; then
+    echo "instagramsci-api: running (pid $(cat "$PID"))"
+  else
+    echo "instagramsci-api: NOT running — check $LOG"
+    return 1
+  fi
+}
+
+case "$1" in
+  start)   start ;;
+  stop)    stop ;;
+  restart) stop; sleep 1; start ;;
+  status)  status ;;
+  *) echo "usage: $0 {start|stop|restart|status}"; exit 1 ;;
+esac
