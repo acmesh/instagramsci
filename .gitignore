@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+
+# Secrets and credentials
+.env
+*.env.*
+!.env.example
+.tokens.json
+*_token*
+*secret*
+credentials.json
+
+# Runtime / process files
+*.log
+*.pid
+*.pid.lock
+
+# Databases and user data
+db/
+*.db
+*.sqlite
+*.sqlite3
+
+# Uploaded / generated files
+uploads/
+dist/
+build/
+
+# Editor and tool config
+.claude/
+.vscode/
+.idea/
+__pycache__/
+*.pyc
+
+# Project-specific
+backend/venv/
+.DS_Store
