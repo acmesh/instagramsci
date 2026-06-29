@@ -1,0 +1,66 @@
+/* Instagramsci — design tokens
+   Brand palette sampled from the Gramsci portrait (assets/instagramsci.jpg).
+   Surface/text colors are theme-aware: see [data-theme] blocks below. */
+:root{
+  /* ---- Brand palette (constant across themes) ---- */
+  --ochre:#D0A640; --ochre-deep:#B98A2A;
+  --ink:#2A2A33; --ink-soft:#383842; --abyss:#150303;
+  --cream:#EBD2BC; --cream-soft:#F4E7D8;
+  --brick:#B23A2E; --brick-deep:#9A3025;
+  --plum:#5A2A3A; --sienna:#312112;
+
+  /* ---- Radius ---- */
+  --r-sm:8px; --r-md:14px; --r-lg:22px; --r-xl:30px;
+
+  /* ---- Type ----
+     --display: characterful sans for aphorisms/headings (editorial warmth).
+     --sans:    neutral UI/body sans. */
+  --display:'Bricolage Grotesque','Inter',system-ui,sans-serif;
+  --sans:'Inter',system-ui,sans-serif;
+  --tracking-tight:-0.015em;
+  --tracking-wide:0.04em;
+  --measure:34ch;            /* ideal aphorism line length */
+
+  /* ---- Layout ---- */
+  --maxfeed:600px;
+}
+
+/* ================= LIGHT THEME (default) ================= */
+:root,[data-theme="light"]{
+  --bg:#F4E7D8;            /* page */
+  --bg-2:#efdcc6;          /* sunken */
+  --surface:#ffffff;       /* cards */
+  --surface-2:#fbf3e8;
+  --border:#ecdcc8;
+  --border-2:#e3d2bd;
+  --text:#2A2A33;          /* primary */
+  --text-2:#5b5247;        /* secondary */
+  --muted:#8a7c6b;         /* tertiary */
+  --rail-bg:#2A2A33;
+  --rail-text:#EBD2BC;
+  --rail-muted:#bfae9b;
+  --rail-hover:#34343f;
+  --topbar:rgba(244,231,216,.88);
+  --shadow:0 6px 24px rgba(21,3,3,.12);
+  --shadow-lg:0 14px 40px rgba(21,3,3,.18);
+}
+
+/* ================= DARK THEME ================= */
+[data-theme="dark"]{
+  --bg:#1b1b22;
+  --bg-2:#15151b;
+  --surface:#23232c;
+  --surface-2:#2a2a34;
+  --border:#33333f;
+  --border-2:#3c3c49;
+  --text:#EBD2BC;
+  --text-2:#cbb9a5;
+  --muted:#9a8c79;
+  --rail-bg:#15151b;
+  --rail-text:#EBD2BC;
+  --rail-muted:#9a8c79;
+  --rail-hover:#2a2a34;
+  --topbar:rgba(21,21,27,.85);
+  --shadow:0 6px 24px rgba(0,0,0,.35);
+  --shadow-lg:0 16px 44px rgba(0,0,0,.5);
+}

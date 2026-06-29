@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Instagramsci</title>
+<meta name="description" content="A visual social network for socialist, community-driven, inclusive ideas — built for the commons." />
+<link rel="icon" href="assets/logo.svg" type="image/svg+xml" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/tokens.css" />
+<link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+
+<!-- ============ LANDING / GATE ============ -->
+<section class="landing" id="landing">
+  <div class="inner">
+    <img class="logo" src="assets/logo.svg" alt="Instagramsci logo" />
+    <div class="wordmark">Insta<span>gramsci</span></div>
+    <div class="tagline">A feed for ideas, built for the commons.</div>
+    <p class="blurb">Images paired with aphorisms — for a cooperative, decentralized, inclusive economy. Named for Antonio Gramsci.</p>
+    <div class="ctas">
+      <button class="btn ochre big" data-go="feed">Enter the feed</button>
+      <button class="btn ghost big" data-go="join">Apply to join</button>
+    </div>
+    <div class="foot">
+      Anyone can read. Posting is for approved members — <a href="#join" data-go="join">apply here</a>.
+      &nbsp;·&nbsp; <a href="#manifesto" data-go="manifesto">Read the Manifesto</a>
+    </div>
+  </div>
+</section>
+
+<!-- ============ APP SHELL ============ -->
+<div class="app">
+
+  <!-- ---- LEFT RAIL ---- -->
+  <nav class="rail" aria-label="Primary">
+    <div class="brand" data-go="feed">
+      <img src="assets/logo.svg" alt="" /><b>Insta<span>gramsci</span></b>
+    </div>
+    <button class="navitem active" data-go="feed"><span class="ic">⌂</span> Home</button>
+    <button class="navitem" data-go="explore"><span class="ic">⊞</span> Explore</button>
+    <button class="navitem" data-go="compose"><span class="ic">＋</span> Compose</button>
+    <button class="navitem" data-go="profile"><span class="ic">◔</span> Profile</button>
+    <button class="navitem" data-go="manifesto"><span class="ic">✦</span> Manifesto</button>
+    <button class="navitem" id="navSettings" data-go="settings" style="display:none"><span class="ic">⚙</span> Settings</button>
+    <button class="navitem" id="navAdmin" data-go="admin" style="display:none"><span class="ic">⚖</span> Member review</button>
+    <div class="spacer"></div>
+    <button class="themebtn" data-theme-toggle aria-label="Toggle colour theme">
+      <span id="themeIcon">☾</span> <span id="themeLabel">Dark mode</span>
+    </button>
+    <div id="authArea"></div>
+  </nav>
+
+  <!-- ---- MAIN ---- -->
+  <main class="main">
+    <div class="topbar">
+      <h1 id="viewTitle">Home</h1>
+      <div class="tabs" id="feedTabs">
+        <button class="tab active" data-tab="latest">Latest</button>
+        <button class="tab" data-tab="commons">Commons</button>
+      </div>
+    </div>
+
+    <!-- FEED -->
+    <section class="view active" id="view-feed">
+      <div class="note" id="feedNote"></div>
+      <div class="feed" id="feed"></div>
+    </section>
+
+    <!-- EXPLORE -->
+    <section class="view" id="view-explore">
+      <div class="explore">
+        <div class="lede">Explore ideas by theme</div>
+        <div class="sub">The aphorism is the unit of value — not the influencer.</div>
+        <div class="tagcloud" id="tagcloud"></div>
+        <div class="grid" id="exploreGrid"></div>
+      </div>
+    </section>
+
+    <!-- COMPOSE -->
+    <section class="view" id="view-compose">
+      <div class="formwrap">
+        <h2>Share an idea</h2>
+        <div class="sub">Write the aphorism. Keep it sharp.</div>
+        <div class="notice">Composing is available to <b>approved members</b>. Not a member yet?
+          <a href="#join" data-go="join" style="color:var(--brick);font-weight:600">Apply to join →</a></div>
+        <input type="file" id="composeFile" accept="image/*" hidden />
+        <div class="drop" id="composeDrop">⬆ Drop an image, or click to browse</div>
+        <div class="field">
+          <label>Aphorism <span class="req">*</span></label>
+          <textarea id="cAph" class="big" maxlength="280" placeholder="“The old is dying and the new cannot yet be born…”"></textarea>
+          <div class="hint">Up to 280 characters. This is the hero of your post.</div>
+        </div>
+        <div class="field">
+          <label>Alt text <span class="req">*</span> <span style="font-weight:500;color:var(--muted)">(required — describe the image so everyone can see it)</span></label>
+          <input id="cAlt" type="text" placeholder="e.g. A printworkers' cooperative, hands setting type by lamplight" />
+        </div>
+        <div class="field">
+          <label>Source attribution <span style="font-weight:500;color:var(--muted)">(if quoting someone)</span></label>
+          <input id="cAttr" type="text" placeholder="e.g. Antonio Gramsci, Prison Notebooks" />
+        </div>
+        <div class="field">
+          <label>Themes</label>
+          <input id="cTags" type="text" placeholder="#Commons #Labour #Care" />
+        </div>
+        <div style="display:flex;gap:10px;margin-top:8px">
+          <button class="btn primary" id="composeShare">Share your idea</button>
+          <button class="btn ghost" data-go="feed">Cancel</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- JOIN / APPLY -->
+    <section class="view" id="view-join">
+      <div class="formwrap">
+        <h2>Apply to join</h2>
+        <div class="sub">Reading is open to everyone. Posting is for approved members.</div>
+        <div class="notice">
+          <b>How membership works.</b> You're free to browse the whole site. To post, tell us a little
+          about yourself and your intentions. Every application gets a <b>first check by a human</b>, and
+          accounts are <b>activated only after approval</b> — this keeps the space cooperative, inclusive,
+          and free of bad-faith actors. We'll email you once your application has been reviewed.
+        </div>
+        <form id="joinForm">
+          <div class="field">
+            <label>Handle <span class="req">*</span></label>
+            <input id="jHandle" type="text" required placeholder="@yourname" />
+          </div>
+          <div class="field">
+            <label>Email <span class="req">*</span></label>
+            <input id="jEmail" type="email" required placeholder="you@example.org" />
+          </div>
+          <div class="field">
+            <label>Password <span class="req">*</span></label>
+            <input id="jPass" type="password" required minlength="8" placeholder="At least 8 characters" />
+            <div class="hint">Your account is created now but stays inactive until an admin approves you.</div>
+          </div>
+          <div class="field">
+            <label>Where are you coming from? <span style="font-weight:500;color:var(--muted)">(optional)</span></label>
+            <input id="jOrigin" type="text" placeholder="A collective, a city, a movement, a link…" />
+          </div>
+          <div class="field">
+            <label>Your intentions here <span class="req">*</span></label>
+            <textarea id="jIntent" required placeholder="What do you hope to share and build with this community?"></textarea>
+            <div class="hint">A few honest sentences. This is what we review.</div>
+          </div>
+          <label class="check">
+            <input type="checkbox" required />
+            <span>I've read the <a href="#manifesto" data-go="manifesto" style="color:var(--brick);font-weight:600">Manifesto</a>
+            and I'm here in good faith, for a cooperative and inclusive commons.</span>
+          </label>
+          <button class="btn primary big" type="submit">Submit application</button>
+        </form>
+        <div class="formdone" id="joinDone">
+          <div class="tick">✦</div>
+          <h3>Application received</h3>
+          <p style="color:var(--text-2)">Thank you. A human will review your note and intentions, and you'll
+          hear from us by email once your account is approved. Until then, feel free to keep reading.</p>
+          <div style="margin-top:16px"><button class="btn ochre" data-go="feed">Browse the feed</button></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- LOGIN -->
+    <section class="view" id="view-login">
+      <div class="formwrap">
+        <h2>Log in</h2>
+        <div class="sub">Welcome back to the commons.</div>
+        <form id="loginForm">
+          <div class="field">
+            <label>Email <span class="req">*</span></label>
+            <input id="lEmail" type="email" required placeholder="you@example.org" />
+          </div>
+          <div class="field">
+            <label>Password <span class="req">*</span></label>
+            <input id="lPass" type="password" required placeholder="Your password" />
+          </div>
+          <div class="field" id="lCodeRow" style="display:none">
+            <label>Authenticator code <span class="req">*</span></label>
+            <input id="lCode" type="text" inputmode="numeric" autocomplete="one-time-code"
+                   placeholder="6-digit code from your app" />
+            <div class="hint">This account has two-factor authentication enabled.</div>
+          </div>
+          <button class="btn primary big" type="submit">Log in</button>
+        </form>
+        <p class="sub" style="margin-top:18px">No account yet?
+          <a href="#join" data-go="join" style="color:var(--brick);font-weight:600">Apply to join →</a></p>
+      </div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section class="view" id="view-settings">
+      <div class="formwrap">
+        <h2>Settings</h2>
+        <div id="settingsGuest" class="notice" style="display:none">
+          Please <a href="#login" data-go="login" style="color:var(--brick);font-weight:600">log in</a> to manage your profile.
+        </div>
+        <div id="settingsBody">
+          <h3 class="seth">Profile</h3>
+          <div class="avatarrow">
+            <img id="setAvatar" class="setavatar" alt="Your avatar" onerror="this.style.visibility='hidden'"/>
+            <div>
+              <input type="file" id="setAvatarFile" accept="image/*" hidden />
+              <button class="btn ghost" id="setAvatarBtn" type="button">Change avatar</button>
+              <div class="hint">JPG, PNG, GIF or WebP.</div>
+            </div>
+          </div>
+          <div class="field"><label>Display name</label><input id="setName" type="text" /></div>
+          <div class="field"><label>Pronouns</label><input id="setPron" type="text" placeholder="she/her, they/them…" /></div>
+          <div class="field"><label>Bio</label><textarea id="setBio" placeholder="A line about you and your work."></textarea></div>
+          <button class="btn primary" id="setSaveProfile" type="button">Save profile</button>
+
+          <h3 class="seth">Account</h3>
+          <div class="field"><label>Email</label><input id="setEmail" type="email" /></div>
+          <div class="field"><label>Current password <span style="color:var(--muted);font-weight:500">(to change email)</span></label><input id="setEmailPass" type="password" autocomplete="current-password" /></div>
+          <button class="btn ghost" id="setSaveEmail" type="button">Update email</button>
+
+          <div class="field" style="margin-top:20px"><label>Current password</label><input id="setCurPass" type="password" autocomplete="current-password" /></div>
+          <div class="field"><label>New password</label><input id="setNewPass" type="password" autocomplete="new-password" minlength="8" /></div>
+          <button class="btn ghost" id="setSavePass" type="button">Change password</button>
+
+          <h3 class="seth">Two-factor authentication</h3>
+          <div id="twofaOff">
+            <p class="sub">Protect your login with one-time codes from an authenticator app (Aegis, Google Authenticator, 1Password…).</p>
+            <button class="btn primary" id="twofaStart" type="button">Enable 2FA</button>
+            <div id="twofaSetup" style="display:none;margin-top:16px">
+              <img id="twofaQR" class="qr" alt="Scan this QR code with your authenticator app" />
+              <p class="hint">Scan the code, or enter this key manually: <code id="twofaSecret"></code></p>
+              <div class="field"><label>Enter the 6-digit code to confirm</label>
+                <input id="twofaCode" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" /></div>
+              <button class="btn primary" id="twofaConfirm" type="button">Confirm &amp; enable</button>
+            </div>
+          </div>
+          <div id="twofaOn" style="display:none">
+            <p class="sub">✓ Two-factor authentication is <b>on</b>.</p>
+            <div class="field"><label>Current password <span style="color:var(--muted);font-weight:500">(to disable)</span></label><input id="twofaDisPass" type="password" autocomplete="current-password" /></div>
+            <button class="btn ghost" id="twofaDisable" type="button">Disable 2FA</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ADMIN: MEMBER REVIEW -->
+    <section class="view" id="view-admin">
+      <div class="formwrap">
+        <h2>Member review</h2>
+        <div class="sub">Read each applicant's intentions, then approve or reject. Approving activates posting for that account.</div>
+        <div id="adminList"></div>
+      </div>
+    </section>
+
+    <!-- PROFILE -->
+    <section class="view" id="view-profile">
+      <div class="profile">
+        <div id="profileGuest" class="notice" style="display:none">
+          Please <a href="#login" data-go="login" style="color:var(--brick);font-weight:600">log in</a> to see your profile.
+        </div>
+        <div id="profileBody">
+          <div class="phead">
+            <img class="av" id="pAvatar" src="" alt="Your avatar" onerror="this.style.visibility='hidden'" />
+            <div>
+              <div class="pname" id="pName">You</div>
+              <div class="ph" id="pHandle">@you</div>
+              <div class="pbio" id="pBio"></div>
+            </div>
+          </div>
+          <div class="pstats">
+            <div><b id="pStatPosts">0</b> aphorisms</div>
+            <div><b id="pStatResonance">0</b> resonances</div>
+            <div><b id="pStatCollect">0</b> collected</div>
+          </div>
+          <div class="grid" id="profileGrid"></div>
+          <div id="profileEmpty" class="sub" style="display:none;margin-top:14px">No aphorisms yet — share your first idea from Compose.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MANIFESTO -->
+    <section class="view" id="view-manifesto">
+      <div class="manifesto">
+        <div class="big">A feed for <em>ideas</em>, built for the <em>commons</em>.</div>
+        <p>Instagramsci is a visual social network for a different economy — cooperative, decentralized, inclusive. We borrow what social media does well (images that travel) and reject what it does badly (outrage, vanity, extraction).</p>
+        <p>Named for Antonio Gramsci, it treats culture as terrain. Every post pairs an image with an aphorism: a sharp, shareable idea worth carrying into the world.</p>
+        <p>Reading is open to all. Posting is for approved members, because a commons is built on trust — we read every application before activating an account.</p>
+        <div class="principles">
+          <div class="p"><b>Ideas over influencers.</b> The aphorism is the unit of value. Follower counts stay quiet.</div>
+          <div class="p"><b>Inclusive by default.</b> Alt text is required. Accessibility is not optional.</div>
+          <div class="p"><b>Decentralization as ethos.</b> Today the theme; tomorrow the infrastructure (Cubbit/IPFS, the Fediverse).</div>
+          <div class="p"><b>Community over algorithm.</b> Chronological and curated feeds, not opaque ranking.</div>
+        </div>
+        <div class="cta"><button class="btn primary big" data-go="join">Apply to join the commons</button></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- ============ MOBILE BOTTOM BAR ============ -->
+<nav class="bottombar" aria-label="Mobile">
+  <button class="active" data-go="feed" title="Home" aria-label="Home">⌂</button>
+  <button data-go="explore" title="Explore" aria-label="Explore">⊞</button>
+  <button data-go="compose" title="Compose" aria-label="Compose">＋</button>
+  <button data-go="join" title="Apply to join" aria-label="Apply to join">✎</button>
+  <button data-go="manifesto" title="Manifesto" aria-label="Manifesto">✦</button>
+</nav>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
