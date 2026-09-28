@@ -2,7 +2,7 @@
    The client library is fetched ONLY when a backend is configured, so demo mode
    needs no network and never depends on the CDN. Uses top-level await (supported
    in modern browsers for ES modules). */
-import { SUPABASE_URL, SUPABASE_ANON_KEY, MODE } from "./config.js";
+import { SUPABASE_URL, SUPABASE_ANON_KEY, MODE } from "./config.js?v=20260927";
 
 let _supabase = null;
 if (MODE === "supabase") {

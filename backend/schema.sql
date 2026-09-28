@@ -21,8 +21,20 @@ create table if not exists users (
   totp_secret   text,                         -- active TOTP secret (when 2FA on)
   totp_pending  text,                         -- secret awaiting first-code confirmation
   totp_enabled  boolean not null default false,
+  token_version integer not null default 0,     -- bump to revoke all of a user's sessions
   created_at    timestamptz not null default now()
 );
+
+-- Failed logins and signups per IP/email, for throttling (pruned by the API).
+create table if not exists auth_attempts (
+  id    bigint generated always as identity primary key,
+  kind  text not null check (kind in ('login','signup')),
+  ip    text not null,
+  email text,
+  at    timestamptz not null default now()
+);
+create index if not exists auth_attempts_ip_idx    on auth_attempts (kind, ip, at);
+create index if not exists auth_attempts_email_idx on auth_attempts (kind, email, at);
 
 create table if not exists membership_applications (
   id          bigint generated always as identity primary key,

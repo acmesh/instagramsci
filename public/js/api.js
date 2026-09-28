@@ -1,11 +1,12 @@
 /* Instagramsci — data access layer (mode-aware).
    POSTGRES (Python API) · SUPABASE · DEMO (seed). Render code consumes ONE shape:
      { id, handle, author:{name,avatar,pron}, image, alt, aphorism, attrib,
-       caption, tag, pinned, manifestoLink, reactions:{resonate,collect}, created_at } */
-import { MODE } from "./config.js";
-import { supabase } from "./supabase.js";
-import { req } from "./rest.js";
-import { PROFILES, TAGS as SEED_TAGS, POSTS as SEED_POSTS } from "./data.js";
+       caption, tag, tags, pinned, manifestoLink, reactions:{resonate,collect}, created_at }
+   `tag` is the first theme (shown on the card), `tags` all of them (for filtering). */
+import { MODE } from "./config.js?v=20260927";
+import { supabase } from "./supabase.js?v=20260927";
+import { req } from "./rest.js?v=20260927";
+import { PROFILES, TAGS as SEED_TAGS, POSTS as SEED_POSTS } from "./data.js?v=20260927";
 
 export const TAGS = SEED_TAGS;
 
@@ -16,7 +17,7 @@ function fromSeed(p){
     id:p.id, handle:p.handle,
     author:{ name:pr.name, avatar:pr.avatar, pron:pr.pron || "" },
     image:p.image, alt:p.alt, aphorism:p.aphorism, attrib:p.attrib || null,
-    caption:p.caption || null, tag:p.tag || "", pinned:!!p.pinned,
+    caption:p.caption || null, tag:p.tag || "", tags:p.tag ? [p.tag] : [], pinned:!!p.pinned,
     manifestoLink:!!p.manifestoLink,
     reactions:{ resonate:p.reactions?.resonate ?? 0, collect:p.reactions?.collect ?? 0,
                 amplify:p.reactions?.amplify ?? 0 },
@@ -26,12 +27,12 @@ function fromSeed(p){
 }
 // post_feed rows have identical column names in both Supabase and the Python API
 function fromRow(r){
-  const firstTag = (r.tags || "").split(" ").filter(Boolean)[0] || "";
+  const tags = (r.tags || "").split(" ").filter(Boolean);
   return {
     id:r.id, handle:r.handle,
     author:{ name:r.display_name || r.handle, avatar:r.avatar_url || "", pron:r.pronouns || "" },
-    image:r.image_url, alt:r.alt_text, aphorism:r.aphorism, attrib:r.attribution || null,
-    caption:r.caption || null, tag:firstTag, pinned:!!r.pinned,
+    image:r.image_url || null, alt:r.alt_text, aphorism:r.aphorism, attrib:r.attribution || null,
+    caption:r.caption || null, tag:tags[0] || "", tags, pinned:!!r.pinned,
     manifestoLink:!!r.pinned,
     reactions:{ resonate:Number(r.resonate_count)||0, collect:Number(r.collect_count)||0,
                 amplify:Number(r.amplify_count)||0 },
@@ -88,6 +89,16 @@ export async function createPost({ file, aphorism, altText, attribution, caption
       if(tags?.length) await supabase.from("post_tags").insert(tags.map(t=>({post_id:post.id,tag_id:t.id})));
     }
     return post;
+  }
+  return { demo:true };
+}
+
+/* ---------- delete a post (author or admin) ---------- */
+export async function deletePost(postId){
+  if(MODE === "postgres") return req(`/posts/${postId}`, { method:"DELETE", auth:true });
+  if(MODE === "supabase"){
+    const { error } = await supabase.from("posts").delete().eq("id", postId);
+    if(error) throw error; return;
   }
   return { demo:true };
 }

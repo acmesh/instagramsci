@@ -2,15 +2,16 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#2A2A33" />
 <title>Instagramsci</title>
 <meta name="description" content="A visual social network for socialist, community-driven, inclusive ideas — built for the commons." />
 <link rel="icon" href="assets/logo.svg" type="image/svg+xml" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/tokens.css" />
-<link rel="stylesheet" href="css/styles.css" />
+<link rel="stylesheet" href="css/tokens.css?v=20260927" />
+<link rel="stylesheet" href="css/styles.css?v=20260927" />
 </head>
 <body>
 
@@ -38,7 +39,7 @@
 <div class="app">
 
   <!-- ---- LEFT RAIL ---- -->
-  <nav class="rail" aria-label="Primary">
+  <nav class="rail" id="rail" aria-label="Primary">
     <div class="brand" data-go="feed">
       <img src="assets/logo.svg" alt="" /><b>Insta<span>gramsci</span></b>
     </div>
@@ -71,6 +72,7 @@
     <!-- FEED -->
     <section class="view active" id="view-feed">
       <div class="note" id="feedNote"></div>
+      <div class="filterbar" id="filterBar" hidden></div>
       <div class="feed" id="feed"></div>
     </section>
 
@@ -91,29 +93,32 @@
         <div class="sub">Write the aphorism. Keep it sharp.</div>
         <div class="notice">Composing is available to <b>approved members</b>. Not a member yet?
           <a href="#join" data-go="join" style="color:var(--brick);font-weight:600">Apply to join →</a></div>
+        <form id="composeForm">
         <input type="file" id="composeFile" accept="image/*" hidden />
-        <div class="drop" id="composeDrop">⬆ Drop an image, or click to browse</div>
+        <div class="drop" id="composeDrop" role="button" tabindex="0">⬆ Add a photo (optional): tap to pick, or drop it here</div>
         <div class="field">
-          <label>Aphorism <span class="req">*</span></label>
+          <label for="cAph">Aphorism <span class="req">*</span></label>
           <textarea id="cAph" class="big" maxlength="280" placeholder="“The old is dying and the new cannot yet be born…”"></textarea>
-          <div class="hint">Up to 280 characters. This is the hero of your post.</div>
+          <div class="hint"><span id="cAphCount">0</span>/280. This is the hero of your post; it works with or without a photo.</div>
         </div>
-        <div class="field">
-          <label>Alt text <span class="req">*</span> <span style="font-weight:500;color:var(--muted)">(required — describe the image so everyone can see it)</span></label>
+        <div class="field" id="cAltRow" hidden>
+          <label for="cAlt">Alt text <span class="req">*</span> <span style="font-weight:500;color:var(--muted)">(describe the photo so everyone can see it)</span></label>
           <input id="cAlt" type="text" placeholder="e.g. A printworkers' cooperative, hands setting type by lamplight" />
         </div>
         <div class="field">
-          <label>Source attribution <span style="font-weight:500;color:var(--muted)">(if quoting someone)</span></label>
+          <label for="cAttr">Source attribution <span style="font-weight:500;color:var(--muted)">(if quoting someone)</span></label>
           <input id="cAttr" type="text" placeholder="e.g. Antonio Gramsci, Prison Notebooks" />
         </div>
         <div class="field">
-          <label>Themes</label>
-          <input id="cTags" type="text" placeholder="#Commons #Labour #Care" />
+          <label for="cTags">Themes</label>
+          <input id="cTags" type="text" autocapitalize="none" placeholder="commons labour care" />
+          <div class="hint" id="cTagsHint"></div>
         </div>
         <div style="display:flex;gap:10px;margin-top:8px">
-          <button class="btn primary" id="composeShare">Share your idea</button>
-          <button class="btn ghost" data-go="feed">Cancel</button>
+          <button class="btn primary" id="composeShare" type="submit">Share your idea</button>
+          <button class="btn ghost" type="button" data-go="feed">Cancel</button>
         </div>
+        </form>
       </div>
     </section>
 
@@ -126,12 +131,14 @@
           <b>How membership works.</b> You're free to browse the whole site. To post, tell us a little
           about yourself and your intentions. Every application gets a <b>first check by a human</b>, and
           accounts are <b>activated only after approval</b> — this keeps the space cooperative, inclusive,
-          and free of bad-faith actors. We'll email you once your application has been reviewed.
+          and free of bad-faith actors. Log in any time to see whether you've been approved.
         </div>
         <form id="joinForm">
           <div class="field">
             <label>Handle <span class="req">*</span></label>
-            <input id="jHandle" type="text" required placeholder="@yourname" />
+            <input id="jHandle" type="text" required autocapitalize="none" autocomplete="username"
+                   pattern="@?[A-Za-z0-9._]{2,30}" placeholder="@yourname" />
+            <div class="hint">2-30 characters: letters, numbers, dots and underscores.</div>
           </div>
           <div class="field">
             <label>Email <span class="req">*</span></label>
@@ -161,8 +168,9 @@
         <div class="formdone" id="joinDone">
           <div class="tick">✦</div>
           <h3>Application received</h3>
-          <p style="color:var(--text-2)">Thank you. A human will review your note and intentions, and you'll
-          hear from us by email once your account is approved. Until then, feel free to keep reading.</p>
+          <p style="color:var(--text-2)">Thank you. A human will review your note and intentions. You're
+          already logged in: once you're approved, your status chip turns to "approved" and you can post.
+          Until then, feel free to keep reading.</p>
           <div style="margin-top:16px"><button class="btn ochre" data-go="feed">Browse the feed</button></div>
         </div>
       </div>
@@ -314,11 +322,12 @@
 <nav class="bottombar" aria-label="Mobile">
   <button class="active" data-go="feed" title="Home" aria-label="Home">⌂</button>
   <button data-go="explore" title="Explore" aria-label="Explore">⊞</button>
-  <button data-go="compose" title="Compose" aria-label="Compose">＋</button>
-  <button data-go="join" title="Apply to join" aria-label="Apply to join">✎</button>
-  <button data-go="manifesto" title="Manifesto" aria-label="Manifesto">✦</button>
+  <button class="bb-compose" data-go="compose" title="Compose" aria-label="Compose">＋</button>
+  <button id="bbMe" data-go="login" title="Log in" aria-label="Log in">→</button>
+  <button data-drawer title="Menu" aria-label="Menu" aria-controls="rail" aria-expanded="false">☰</button>
 </nav>
+<div class="scrim" data-drawer-close></div>
 
-<script type="module" src="js/app.js"></script>
+<script type="module" src="js/app.js?v=20260927"></script>
 </body>
 </html>

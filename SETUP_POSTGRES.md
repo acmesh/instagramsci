@@ -4,7 +4,7 @@ This is the full path to a live site on your Devuan server using the PostgreSQL
 you already have, plus a small Python API. Architecture:
 
 ```
-Browser ──HTTPS──> nginx ──┬─ /            static site (index.html, css, js, assets)
+Browser ──HTTPS──> nginx ──┬─ /            static site: public/ only (index.html, css, js, assets)
                            ├─ /uploads/    uploaded post images (served by nginx)
                            └─ /api/  ──>    Flask API (gunicorn, 127.0.0.1:8077) ──> PostgreSQL
 ```
@@ -12,6 +12,12 @@ Browser ──HTTPS──> nginx ──┬─ /            static site (index.ht
 Why an API at all: browsers can't talk to PostgreSQL directly, and someone has to
 hash passwords, check approvals, and accept uploads. That's the Flask app in
 `backend/`. It's the only moving part beyond Postgres and your web server.
+
+> **Only `public/` may be web-visible.** The web server's document root is
+> `…/instagramsci/public`, never the project folder itself. `backend/` holds
+> `.env` (database password and `SECRET_KEY`); anyone who can download it can
+> log in as any user. Check after every server change:
+> `curl -s https://your-site/backend/.env | grep -c SECRET_KEY` must print 0.
 
 ---
 
@@ -146,10 +152,14 @@ Extend the server block from `DEPLOY.md`:
 server {
     listen 80;
     server_name instagramsci.example.org;
-    root /var/www/instagramsci;
+    root /var/www/instagramsci/public;     # public/ only, never the project root
     index index.html;
 
     location / { try_files $uri $uri/ /index.html; }
+
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options SAMEORIGIN always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
 
     # API → Flask/gunicorn
     location /api/ {
@@ -163,6 +173,7 @@ server {
     location /uploads/ {
         alias /var/www/instagramsci/backend/uploads/;
         expires 30d;
+        add_header X-Content-Type-Options nosniff always;
     }
 }
 ```
@@ -188,9 +199,13 @@ sudo service apache2 restart          # Devuan: sysvinit, not systemd
 ```
 
 Key points in that file:
+- `DocumentRoot …/public` serves only the static site; a `Require all denied`
+  block keeps `backend/` unreachable even if the root is ever pointed one level up.
 - `ProxyPass /api/ http://127.0.0.1:8077/` sends API calls to gunicorn; everything
   else is served from disk. `proxy` + `proxy_http` modules are required.
-- `Alias /uploads/ …/backend/uploads/` serves uploaded images directly.
+- `Alias /uploads/ …/backend/uploads/` serves uploaded images directly, with
+  `SetHandler none` so nothing there can run as a script. (The API also
+  re-encodes every image and gives it a random name.)
 - A `mod_rewrite` block falls back to `index.html` for client-side routes, while
   excluding `/api/`, `/uploads/`, and real files — `rewrite` module required.
 - `LimitRequestBody 8388608` matches the API's 8 MB upload cap.
@@ -205,7 +220,7 @@ Same-origin still applies, so no CORS. Run **either** nginx **or** Apache on por
 
 ## 6. Point the frontend at the API, create your admin, add the first post
 
-1. Edit `js/config.js`:
+1. Edit `public/js/config.js`:
    ```js
    export const API_BASE = "/api";   // that's all — leave the SUPABASE_* lines empty
    ```
@@ -245,7 +260,7 @@ psql "postgresql://instagramsci:PASSWORD@127.0.0.1:5432/instagramsci" -f backend
 cd /var/www/instagramsci/backend && . venv/bin/activate && pip install -r requirements.txt
 sudo service instagramsci-api restart
 ```
-After updating, also re-upload the static frontend (`index.html`, `js/`, `css/`).
+After updating, also re-upload the static frontend (the `public/` folder).
 (Fresh installs need nothing extra — `schema.sql` already includes the columns and
 `requirements.txt` includes `pyotp`.) The QR code is rendered in the browser from a
 small library loaded on demand, so no server-side QR dependency is needed.
@@ -344,7 +359,7 @@ which is portable everywhere; older `scrypt` hashes still verify fine.)
 | `backend/seed_first_post.sql` | The pinned first post |
 | `backend/requirements.txt` | Flask, psycopg2-binary, gunicorn |
 | `backend/.env.example` | Backend configuration template |
-| `js/config.js` | Set `API_BASE="/api"` to go live |
+| `public/js/config.js` | Set `API_BASE="/api"` to go live |
 | `js/rest.js` | Frontend REST client (token in localStorage) |
 | `js/auth.js`, `js/api.js` | Mode-aware (postgres / supabase / demo) |
 

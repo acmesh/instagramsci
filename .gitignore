@@ -36,3 +36,6 @@ __pycache__/
 # Project-specific
 backend/venv/
 .DS_Store
+
+# Local session notes (may describe security incidents; keep off the public repo)
+WORKLOG.md

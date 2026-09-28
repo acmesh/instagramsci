@@ -4,21 +4,22 @@ Instagramsci — minimal API server (Flask + psycopg2 over plain PostgreSQL).
 Bridges the static frontend to your existing Postgres. Authorization is enforced
 here in the app (not via row-level security). Auth tokens are signed with
 itsdangerous (ships with Flask); passwords hashed with werkzeug (ships with Flask).
-Only external deps: Flask, psycopg2.
+External deps: Flask, psycopg2, pyotp, Pillow.
 
 Run (dev):   FLASK_APP=app.py flask run --port 8077
 Run (prod):  gunicorn -w 2 -b 127.0.0.1:8077 app:app
 Config:      see .env.example  (values read from the environment)
 """
-import os, re, time, pathlib
+import os, re, uuid, pathlib
 from functools import wraps
 
 import psycopg2
 import psycopg2.extras
 import pyotp
+from PIL import Image, ImageOps, UnidentifiedImageError
 from flask import Flask, request, jsonify, g, send_from_directory
+from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import generate_password_hash, check_password_hash
-from werkzeug.utils import secure_filename
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 PASSWORD_METHOD = "pbkdf2:sha256"   # portable everywhere; avoids scrypt edge cases
@@ -52,13 +53,32 @@ DB_DSN       = os.environ.get("DATABASE_URL", "dbname=instagramsci")
 SECRET_KEY   = os.environ.get("SECRET_KEY", "change-me-in-production")
 UPLOAD_DIR   = os.environ.get("UPLOAD_DIR", str(pathlib.Path(__file__).parent / "uploads"))
 TOKEN_MAX_AGE = int(os.environ.get("TOKEN_MAX_AGE", 60 * 60 * 24 * 30))  # 30 days
-ALLOWED_EXT  = {"png", "jpg", "jpeg", "gif", "webp"}
-MAX_UPLOAD   = 8 * 1024 * 1024  # 8 MB
+MAX_UPLOAD   = 8 * 1024 * 1024  # 8 MB (the browser shrinks photos before upload)
+
+# Images are decoded and re-encoded by Pillow; the uploaded bytes are never
+# stored as-is. Only these decoded formats are accepted, whatever the filename says.
+IMAGE_FORMATS = {"JPEG", "PNG", "GIF", "WEBP"}
+POST_IMAGE_MAX = 2048   # longest side, px
+AVATAR_MAX     = 512
+Image.MAX_IMAGE_PIXELS = 50_000_000   # refuse decompression bombs
+
+# Login / signup throttling (per client IP and per email).
+LOGIN_WINDOW_MIN   = 15
+LOGIN_MAX_PER_IP   = 20
+LOGIN_MAX_PER_MAIL = 10
+SIGNUP_MAX_PER_IP_HOUR = 5
+
+# A placeholder or short key lets anyone forge login tokens. Refuse to start.
+if SECRET_KEY in ("change-me-in-production", "CHANGE_ME_LONG_RANDOM_STRING") or len(SECRET_KEY) < 32:
+    raise RuntimeError("SECRET_KEY is missing or too short. Set a long random value in backend/.env: "
+                       "python3 -c \"import secrets; print(secrets.token_urlsafe(48))\"")
 
 pathlib.Path(UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD
+# Apache/nginx proxy /api/ to us; trust exactly one X-Forwarded-For hop for the client IP.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1)
 signer = URLSafeTimedSerializer(SECRET_KEY, salt="igs-auth")
 
 # ---------------------------------------------------------------- db helper
@@ -85,26 +105,91 @@ def q(sql, args=(), one=False, commit=False):
         return (rows[0] if rows else None) if one else rows
 
 # ---------------------------------------------------------------- auth utils
-def make_token(uid):
-    return signer.dumps({"uid": uid})
+# Tokens carry the user's token_version. Bumping it in the DB (password change,
+# block, admin action) invalidates every token issued before, on every device.
+def make_token(uid, tv):
+    return signer.dumps({"uid": uid, "tv": tv})
 
 def read_token(tok):
     try:
         data = signer.loads(tok, max_age=TOKEN_MAX_AGE)
-        return data.get("uid")
+        return data.get("uid"), data.get("tv")
     except (BadSignature, SignatureExpired):
-        return None
+        return None, None
 
 def current_user():
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
         return None
-    uid = read_token(auth[7:])
+    uid, tv = read_token(auth[7:])
     if not uid:
         return None
-    return q("select id, email, handle, display_name, bio, avatar_url, pronouns, "
-             "is_approved, is_admin, is_blocked, totp_enabled from users where id=%s",
-             (uid,), one=True)
+    u = q("select id, email, handle, display_name, bio, avatar_url, pronouns, "
+          "is_approved, is_admin, is_blocked, totp_enabled, token_version from users where id=%s",
+          (uid,), one=True)
+    if not u or u["token_version"] != tv:
+        return None
+    return u
+
+# ---------------------------------------------------------------- throttling
+def client_ip():
+    return request.remote_addr or "unknown"
+
+def too_many(kind, ip, email=None):
+    """True when this IP (or email) has hit the limit for `kind` recently."""
+    if kind == "login":
+        by_ip = q("select count(*) as n from auth_attempts where kind='login' and ip=%s "
+                  "and at > now() - make_interval(mins => %s)", (ip, LOGIN_WINDOW_MIN), one=True)
+        if by_ip["n"] >= LOGIN_MAX_PER_IP:
+            return True
+        if email:
+            by_mail = q("select count(*) as n from auth_attempts where kind='login' and email=%s "
+                        "and at > now() - make_interval(mins => %s)", (email, LOGIN_WINDOW_MIN), one=True)
+            return by_mail["n"] >= LOGIN_MAX_PER_MAIL
+        return False
+    n = q("select count(*) as n from auth_attempts where kind=%s and ip=%s "
+          "and at > now() - interval '1 hour'", (kind, ip), one=True)["n"]
+    return n >= SIGNUP_MAX_PER_IP_HOUR
+
+def record_attempt(kind, ip, email=None):
+    q("insert into auth_attempts (kind, ip, email) values (%s,%s,%s)", (kind, ip, email), commit=True)
+    q("delete from auth_attempts where at < now() - interval '1 day'", commit=True)
+
+# ---------------------------------------------------------------- images
+def save_image(fstore, max_side, prefix=""):
+    """Decode an uploaded image, fix its rotation, shrink it and re-encode it.
+
+    Re-encoding drops EXIF (including GPS location) and anything smuggled
+    alongside the pixels. The stored name is random; the client's filename is
+    never used. Returns the public URL, or raises ValueError with a user message.
+    """
+    try:
+        img = Image.open(fstore.stream)
+        fmt = img.format
+        if fmt not in IMAGE_FORMATS:
+            raise ValueError("Unsupported image type. Use JPG, PNG, GIF or WebP.")
+        img = ImageOps.exif_transpose(img)
+        img.thumbnail((max_side, max_side))
+    except (UnidentifiedImageError, Image.DecompressionBombError, OSError, SyntaxError):
+        raise ValueError("That file isn't a readable image.")
+    # Keep transparency as PNG; everything else becomes JPEG (smaller, universal).
+    if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+        img, ext, opts = img.convert("RGBA"), "png", {"optimize": True}
+    else:
+        img, ext, opts = img.convert("RGB"), "jpg", {"quality": 85, "optimize": True, "progressive": True}
+    name = f"{prefix}{uuid.uuid4().hex}.{ext}"
+    img.save(os.path.join(UPLOAD_DIR, name), **opts)
+    return f"/uploads/{name}"
+
+def remove_upload(url):
+    """Delete a file we stored, given its /uploads/... URL. Ignores anything else."""
+    if not url or not url.startswith("/uploads/"):
+        return
+    path = os.path.join(UPLOAD_DIR, os.path.basename(url))
+    try:
+        os.remove(path)
+    except FileNotFoundError:
+        pass
 
 def require(approved=False, admin=False):
     def deco(fn):
@@ -134,7 +219,12 @@ def public_user(u):
         "has_2fa": bool(u.get("totp_enabled")),
     }
 
-EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+EMAIL_RE  = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+HANDLE_RE = re.compile(r"^[a-z0-9._]{2,30}$")
+
+# Used to spend the same hashing time when the email doesn't exist, so response
+# timing doesn't reveal which emails have accounts.
+_DUMMY_HASH = generate_password_hash("not-a-real-password", method=PASSWORD_METHOD)
 
 # ---------------------------------------------------------------- auth routes
 @app.post("/auth/signup")
@@ -142,19 +232,23 @@ def signup():
     d = request.get_json(force=True, silent=True) or {}
     email = (d.get("email") or "").strip().lower()
     password = d.get("password") or ""
-    handle = (d.get("handle") or "").strip().lstrip("@")
-    origin = (d.get("origin") or "").strip()
-    intentions = (d.get("intentions") or "").strip()
+    handle = (d.get("handle") or "").strip().lstrip("@").lower()
+    origin = (d.get("origin") or "").strip()[:200]
+    intentions = (d.get("intentions") or "").strip()[:2000]
+    ip = client_ip()
+    if too_many("signup", ip):
+        return jsonify(error="Too many applications from your network. Try again in an hour."), 429
     if not EMAIL_RE.match(email):
         return jsonify(error="Enter a valid email."), 400
     if len(password) < 8:
         return jsonify(error="Password must be at least 8 characters."), 400
-    if not handle:
-        return jsonify(error="Choose a handle."), 400
+    if not HANDLE_RE.match(handle):
+        return jsonify(error="Handles are 2-30 characters: letters, numbers, dots and underscores."), 400
     if not intentions:
         return jsonify(error="Tell us your intentions."), 400
     if q("select 1 from users where email=%s or handle=%s", (email, handle), one=True):
         return jsonify(error="That email or handle is already taken."), 409
+    record_attempt("signup", ip, email)
 
     # pbkdf2:sha256 is pure-Python in werkzeug and portable everywhere; avoids any
     # scrypt/OpenSSL edge cases on minimal servers. (Existing scrypt hashes still
@@ -166,14 +260,19 @@ def signup():
     q("insert into membership_applications (user_id, handle, email, origin, intentions) "
       "values (%s,%s,%s,%s,%s)",
       (user["id"], handle, email, origin, intentions), commit=True)
-    return jsonify(token=make_token(user["id"]), profile=public_user(user))
+    return jsonify(token=make_token(user["id"], user["token_version"]), profile=public_user(user))
 
 @app.post("/auth/login")
 def login():
     d = request.get_json(force=True, silent=True) or {}
     email = (d.get("email") or "").strip().lower()
+    ip = client_ip()
+    if too_many("login", ip, email):
+        return jsonify(error=f"Too many attempts. Try again in {LOGIN_WINDOW_MIN} minutes."), 429
     user = q("select * from users where email=%s", (email,), one=True)
-    if not user or not check_password_hash(user["password_hash"], d.get("password") or ""):
+    ok = check_password_hash(user["password_hash"] if user else _DUMMY_HASH, d.get("password") or "")
+    if not user or not ok:
+        record_attempt("login", ip, email)
         return jsonify(error="Wrong email or password."), 401
     if user.get("is_blocked"):
         return jsonify(error="This account has been blocked."), 403
@@ -184,8 +283,10 @@ def login():
         if not code:
             return jsonify(twofa_required=True)
         if not pyotp.TOTP(user["totp_secret"]).verify(code, valid_window=1):
+            record_attempt("login", ip, email)
             return jsonify(twofa_required=True, error="Invalid 2FA code.")
-    return jsonify(token=make_token(user["id"]), profile=public_user(user))
+    q("delete from auth_attempts where kind='login' and email=%s", (email,), commit=True)
+    return jsonify(token=make_token(user["id"], user["token_version"]), profile=public_user(user))
 
 @app.get("/me")
 def me():
@@ -197,9 +298,9 @@ def me():
 @require()
 def update_me():
     d = request.get_json(force=True, silent=True) or {}
-    display_name = (d.get("display_name") or "").strip() or None
-    bio = (d.get("bio") or "").strip() or None
-    pronouns = (d.get("pronouns") or "").strip() or None
+    display_name = (d.get("display_name") or "").strip()[:60] or None
+    bio = (d.get("bio") or "").strip()[:500] or None
+    pronouns = (d.get("pronouns") or "").strip()[:40] or None
     u = q("update users set display_name=%s, bio=%s, pronouns=%s where id=%s returning *",
           (display_name, bio, pronouns, g.user["id"]), one=True, commit=True)
     return jsonify(profile=public_user(u))
@@ -210,13 +311,14 @@ def update_avatar():
     f = request.files.get("avatar")
     if not f or not f.filename:
         return jsonify(error="No image provided."), 400
-    ext = f.filename.rsplit(".", 1)[-1].lower()
-    if ext not in ALLOWED_EXT:
-        return jsonify(error="Unsupported image type."), 400
-    name = f"avatar-{g.user['id']}-{int(time.time())}-{secure_filename(f.filename)}"
-    f.save(os.path.join(UPLOAD_DIR, name))
+    try:
+        url = save_image(f, AVATAR_MAX, prefix="avatar-")
+    except ValueError as e:
+        return jsonify(error=str(e)), 400
+    old = g.user.get("avatar_url")
     u = q("update users set avatar_url=%s where id=%s returning *",
-          (f"/uploads/{name}", g.user["id"]), one=True, commit=True)
+          (url, g.user["id"]), one=True, commit=True)
+    remove_upload(old)
     return jsonify(profile=public_user(u))
 
 @app.post("/me/email")
@@ -245,9 +347,11 @@ def change_password():
     new = d.get("new_password") or ""
     if len(new) < 8:
         return jsonify(error="New password must be at least 8 characters."), 400
-    q("update users set password_hash=%s where id=%s",
-      (generate_password_hash(new, method=PASSWORD_METHOD), g.user["id"]), commit=True)
-    return jsonify(ok=True)
+    # Bumping token_version logs out every other device; this one gets a fresh token.
+    u = q("update users set password_hash=%s, token_version=token_version+1 where id=%s "
+          "returning id, token_version",
+          (generate_password_hash(new, method=PASSWORD_METHOD), g.user["id"]), one=True, commit=True)
+    return jsonify(ok=True, token=make_token(u["id"], u["token_version"]))
 
 # ---------------------------------------------------------------- 2FA (TOTP)
 @app.post("/me/2fa/setup")
@@ -336,32 +440,47 @@ def create_post():
     aphorism = (request.form.get("aphorism") or "").strip()
     alt_text = (request.form.get("alt_text") or "").strip()
     attribution = (request.form.get("attribution") or "").strip() or None
-    caption = (request.form.get("caption") or "").strip() or None
-    tags = [t.strip() for t in (request.form.get("tags") or "").split() if t.strip()]
-    if not aphorism or not alt_text:
-        return jsonify(error="Aphorism and alt text are required."), 400
+    caption = (request.form.get("caption") or "").strip()[:2000] or None
+    # "#Commons", "commons", "Commons," all mean the tag with slug "commons".
+    slugs = sorted({t.strip("#").lower() for t in re.split(r"[\s,]+", request.form.get("tags") or "")
+                    if t.strip("#")})
+    f = request.files.get("image")
+    has_image = bool(f and f.filename)
+    if not aphorism:
+        return jsonify(error="Write your aphorism first."), 400
     if len(aphorism) > 280:
         return jsonify(error="Aphorism must be 280 characters or fewer."), 400
+    if has_image and not alt_text:
+        return jsonify(error="Describe the image in the alt text field."), 400
 
     image_url = None
-    f = request.files.get("image")
-    if f and f.filename:
-        ext = f.filename.rsplit(".", 1)[-1].lower()
-        if ext not in ALLOWED_EXT:
-            return jsonify(error="Unsupported image type."), 400
-        name = f"{g.user['id']}-{int(time.time())}-{secure_filename(f.filename)}"
-        f.save(os.path.join(UPLOAD_DIR, name))
-        image_url = f"/uploads/{name}"
+    if has_image:
+        try:
+            image_url = save_image(f, POST_IMAGE_MAX)
+        except ValueError as e:
+            return jsonify(error=str(e)), 400
 
     post = q("insert into posts (author_id, image_url, aphorism, alt_text, attribution, caption) "
              "values (%s,%s,%s,%s,%s,%s) returning id",
-             (g.user["id"], image_url, aphorism, alt_text, attribution, caption),
+             (g.user["id"], image_url, aphorism, alt_text if has_image else "", attribution, caption),
              one=True, commit=True)
-    if tags:
+    if slugs:
         q("insert into post_tags (post_id, tag_id) "
-          "select %s, id from tags where label = any(%s) on conflict do nothing",
-          (post["id"], tags), commit=True)
+          "select %s, id from tags where slug = any(%s) on conflict do nothing",
+          (post["id"], slugs), commit=True)
     return jsonify(id=post["id"])
+
+@app.delete("/posts/<int:post_id>")
+@require()
+def delete_post(post_id):
+    p = q("select author_id, image_url from posts where id=%s", (post_id,), one=True)
+    if not p:
+        return jsonify(error="That post doesn't exist."), 404
+    if p["author_id"] != g.user["id"] and not g.user["is_admin"]:
+        return jsonify(error="You can only delete your own posts."), 403
+    q("delete from posts where id=%s", (post_id,), commit=True)
+    remove_upload(p["image_url"])
+    return jsonify(ok=True)
 
 @app.post("/posts/<int:post_id>/react")
 @require(approved=True)
@@ -423,7 +542,8 @@ def list_users():
 def block_user(uid):
     if uid == g.user["id"]:
         return jsonify(error="You can't block your own account."), 400
-    q("update users set is_blocked = true where id=%s", (uid,), commit=True)
+    q("update users set is_blocked = true, token_version = token_version + 1 where id=%s",
+      (uid,), commit=True)
     return jsonify(ok=True)
 
 @app.post("/admin/users/<int:uid>/unblock")
@@ -437,8 +557,14 @@ def unblock_user(uid):
 def delete_user(uid):
     if uid == g.user["id"]:
         return jsonify(error="You can't delete your own account."), 400
+    files = q("select image_url as url from posts where author_id=%s and image_url is not null "
+              "union select avatar_url from users where id=%s and avatar_url is not null", (uid, uid))
+    # reviewed_by doesn't cascade: clear it, or deleting an admin who reviewed anyone fails.
+    q("update membership_applications set reviewed_by=null where reviewed_by=%s", (uid,), commit=True)
     # FK cascades remove the user's posts, reactions, comments, follows, application.
     q("delete from users where id=%s", (uid,), commit=True)
+    for f in files:
+        remove_upload(f["url"])
     return jsonify(ok=True)
 
 # ---------------------------------------------------------------- uploaded files
@@ -448,20 +574,24 @@ def delete_user(uid):
 def uploads(name):
     return send_from_directory(UPLOAD_DIR, name)
 
+@app.errorhandler(413)
+def too_large(_e):
+    return jsonify(error=f"That file is too large (max {MAX_UPLOAD // (1024 * 1024)} MB)."), 413
+
+# Public endpoint: reports status only. Details (paths, DB errors) go to the log.
 @app.get("/health")
 def health():
-    out = {"ok": True, "upload_dir": UPLOAD_DIR,
-           "upload_writable": os.access(UPLOAD_DIR, os.W_OK)}
+    out = {"ok": True, "upload_writable": os.access(UPLOAD_DIR, os.W_OK)}
     try:
         q("select 1", one=True)
         out["db"] = True
     except Exception as e:
+        app.logger.error("health: database check failed: %s", e)
         out["ok"] = False
         out["db"] = False
-        out["error"] = str(e)
     if not out["upload_writable"]:
+        app.logger.error("health: UPLOAD_DIR not writable by the API user: %s", UPLOAD_DIR)
         out["ok"] = False
-        out.setdefault("error", f"UPLOAD_DIR not writable by the API user: {UPLOAD_DIR}")
     return jsonify(out), (200 if out["ok"] else 500)
 
 if __name__ == "__main__":

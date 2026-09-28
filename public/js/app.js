@@ -1,9 +1,9 @@
 /* Instagramsci — app orchestration (Phase 2).
    Renders from the api layer (live Supabase or demo seed), manages auth state,
    gates posting/reacting to approved members, and drives the admin review page. */
-import { MODE } from "./config.js";
-import * as Auth from "./auth.js";
-import * as API from "./api.js";
+import { MODE } from "./config.js?v=20260927";
+import * as Auth from "./auth.js?v=20260927";
+import * as API from "./api.js?v=20260927";
 
 const LIVE = MODE !== "demo";   // postgres or supabase = live backend
 
@@ -31,6 +31,16 @@ const toggleTheme = () =>
   applyTheme(document.documentElement.getAttribute("data-theme")==="dark"?"light":"dark");
 
 /* ===================== POST CARD ===================== */
+/* The author and admins can delete a post (the API enforces the same rule). */
+function canDelete(p){
+  if(!LIVE || !Auth.isSignedIn()) return false;
+  return Auth.isAdmin() || p.handle === Auth.currentProfile().handle;
+}
+function avatar(a, handle){
+  return a.avatar
+    ? `<img src="${esc(a.avatar)}" alt="Avatar of @${esc(handle)}" loading="lazy"/>`
+    : `<span class="avph" aria-hidden="true">${esc((a.name || handle || "?").slice(0,1).toUpperCase())}</span>`;
+}
 function postCard(p){
   const a = p.author || {};
   const meta = a.pron ? ` · ${esc(a.pron)}` : "";
@@ -39,34 +49,41 @@ function postCard(p){
     : (p.caption ? `<div class="attrib" style="font-style:normal;color:var(--text-2)">${esc(p.caption)}</div>` : "");
   const mine = p.mine || [];
   const onR = mine.includes("resonate"), onC = mine.includes("collect"), onA = mine.includes("amplify");
-  return `
-  <article class="card${p.pinned?" pinned":""}">
-    ${p.pinned?`<div class="pinflag">✦ First post · pinned</div>`:""}
-    <div class="head">
-      <img src="${esc(a.avatar)}" alt="Avatar of @${esc(p.handle)}" loading="lazy"/>
-      <div class="who"><b>${esc(a.name)}</b><br><small>@${esc(p.handle)}${meta}</small></div>
-      ${p.tag?`<span class="pill">${esc(p.tag)}</span>`:""}
-    </div>
+  // Posts without a photo are notes: no media block, bigger text.
+  const media = p.image ? `
     <div class="media">
       <div class="imgwrap"><img src="${esc(p.image)}" alt="${esc(p.alt)}" loading="lazy"/></div>
       <span class="altbadge">ALT ✓</span>
+    </div>` : "";
+  return `
+  <article class="card${p.pinned?" pinned":""}${p.image?"":" note"}" id="post-${esc(p.id)}">
+    ${p.pinned?`<div class="pinflag">✦ First post · pinned</div>`:""}
+    <div class="head">
+      ${avatar(a, p.handle)}
+      <div class="who"><b>${esc(a.name)}</b><br><small>@${esc(p.handle)}${meta}</small></div>
+      ${p.tag?`<span class="pill">${esc(p.tag)}</span>`:""}
+      ${canDelete(p)?`<button class="postdel" data-delpost="${esc(p.id)}">Delete</button>`:""}
     </div>
+    ${media}
     <div class="aphorism"><span class="q">“</span>${esc(p.aphorism)}<span class="q">”</span></div>
     ${p.attrib?`<div class="attrib">— ${esc(p.attrib)}</div>`:""}
     ${extra}
     <div class="actions" data-id="${esc(p.id)}">
       <button class="act resonate${onR?" on":""}" data-kind="resonate" aria-pressed="${onR}">
-        <span class="ic">✊</span><span class="lbl">${onR?"Resonates":"Resonate"}</span>
+        <span class="ic" aria-hidden="true">✊</span><span class="lbl">${onR?"Resonates":"Resonate"}</span>
         <span class="count">${p.reactions.resonate}</span>
       </button>
       <button class="act discuss" data-post="${esc(p.id)}">
-        <span class="ic">❝</span> Discuss <span class="count">${p.comments}</span>
+        <span class="ic" aria-hidden="true">❝</span><span class="lbl">Discuss</span>
+        <span class="count">${p.comments}</span>
       </button>
-      <button class="act collect${onC?" on":""}" data-kind="collect">
-        <span class="ic">❏</span> Collect <span class="count">${p.reactions.collect}</span>
+      <button class="act collect${onC?" on":""}" data-kind="collect" aria-pressed="${onC}">
+        <span class="ic" aria-hidden="true">❏</span><span class="lbl">Collect</span>
+        <span class="count">${p.reactions.collect}</span>
       </button>
-      <button class="act amplify${onA?" on":""}" data-kind="amplify">
-        <span class="ic">⇄</span> Amplify <span class="count">${p.reactions.amplify}</span>
+      <button class="act amplify${onA?" on":""}" data-kind="amplify" aria-pressed="${onA}">
+        <span class="ic" aria-hidden="true">⇄</span><span class="lbl">Amplify</span>
+        <span class="count">${p.reactions.amplify}</span>
       </button>
     </div>
     <div class="comments" id="cm-${esc(p.id)}" hidden></div>
@@ -74,21 +91,40 @@ function postCard(p){
 }
 
 /* ===================== RENDER ===================== */
+const COMMONS_TAGS = ["#Commons","#Care","#Energy"];
+const FILTER = { tab:"latest", tag:null };   // feed tab + theme picked in Explore
+
 async function loadFeed(){
   FEED = await API.getFeed();
   renderFeed();
   renderGrids();
 }
-function renderFeed(filter){
-  const list = filter ? FEED.filter(filter) : FEED;
-  $("#feed").innerHTML = list.map(postCard).join("");
+function renderFeed(){
+  let list = FEED;
+  if(FILTER.tab === "commons") list = list.filter(p => p.tags.some(t => COMMONS_TAGS.includes(t)));
+  if(FILTER.tag) list = list.filter(p => p.tags.includes(FILTER.tag));
+  const bar = $("#filterBar");
+  bar.hidden = !FILTER.tag;
+  if(FILTER.tag) bar.innerHTML = `Showing <b>${esc(FILTER.tag)}</b> <button data-clear-filter>Show all</button>`;
+  $("#feed").innerHTML = list.length ? list.map(postCard).join("")
+    : `<p class="sub" style="text-align:center">Nothing here yet.</p>`;
 }
-const tile = (p)=>`<div class="tile">
-  <img src="${esc(p.image)}" alt="${esc(p.alt)}" loading="lazy"/>
-  <div class="ov">“${esc(p.aphorism.slice(0,52))}…”</div></div>`;
+const short = (s, n) => s.length > n ? s.slice(0, n).trimEnd() + "…" : s;
+const tile = (p) => p.image
+  ? `<div class="tile" data-tile="${esc(p.id)}" role="button" tabindex="0">
+       <img src="${esc(p.image)}" alt="${esc(p.alt)}" loading="lazy"/>
+       <div class="ov">“${esc(short(p.aphorism, 52))}”</div></div>`
+  : `<div class="tile text" data-tile="${esc(p.id)}" role="button" tabindex="0">
+       <div class="tq">“${esc(short(p.aphorism, 90))}”</div></div>`;
 function renderGrids(){
-  $("#tagcloud").innerHTML = API.TAGS.map(t=>`<button class="tagbtn">${esc(t)}</button>`).join("");
+  $("#tagcloud").innerHTML = API.TAGS.map(t=>`<button class="tagbtn" data-tag="${esc(t)}">${esc(t)}</button>`).join("");
   $("#exploreGrid").innerHTML = FEED.map(tile).join("");
+}
+/* Open a post from a grid tile: show the full feed and scroll to its card. */
+function showPost(id){
+  FILTER.tag = null; setTab("latest");
+  go("feed"); renderFeed();
+  document.getElementById("post-" + id)?.scrollIntoView({ block:"start", behavior:"instant" });
 }
 
 /* ===================== PROFILE ===================== */
@@ -142,7 +178,16 @@ function renderAuth(){
       <button class="navitem" data-go="join"><span class="ic">✎</span> Apply to join</button>`;
   }
 
-  // Topbar control — always visible (works on mobile where the rail is hidden)
+  // Bottom bar (mobile): the account slot opens your profile, or login when signed out
+  const bb = $("#bbMe");
+  if(bb){
+    bb.dataset.go = signedIn ? "profile" : "login";
+    bb.textContent = signedIn ? "☺" : "→";
+    bb.title = signedIn ? "Profile" : "Log in";
+    bb.setAttribute("aria-label", bb.title);
+  }
+
+  // Topbar control (on phones only "Log in" shows; the rest is in the bottom bar and menu)
   const top = $("#authTop");
   if(top){
     top.innerHTML = signedIn
@@ -165,7 +210,16 @@ function requireApproval(){
 const TITLES={feed:"Home",explore:"Explore",compose:"Compose",profile:"Profile",
   manifesto:"Manifesto",join:"Apply to join",login:"Log in",admin:"Member review",
   users:"Members",settings:"Settings"};
-function go(view){
+const VIEWS = Object.keys(TITLES);
+let CURRENT = null;   // view on screen, or null while the landing page shows
+
+/* Each view has a URL (#feed, #compose…) so reload keeps you in place and the
+   phone's back gesture moves between views instead of leaving the site. */
+function go(view, { fromHistory=false } = {}){
+  if(!VIEWS.includes(view)) view = "feed";
+  CURRENT = view;
+  if(!fromHistory && location.hash !== "#" + view) history.pushState(null, "", "#" + view);
+  setDrawer(false);
   document.body.classList.add("in-app");
   $$(".view").forEach(v=>v.classList.remove("active"));
   const el=$("#view-"+view); if(el) el.classList.add("active");
@@ -177,7 +231,30 @@ function go(view){
   if(view==="users") renderUsers();
   if(view==="settings") openSettings();
   if(view==="profile") openProfile();
-  window.scrollTo({top:0});
+  window.scrollTo({ top:0, behavior:"instant" });   // a new page, not a smooth scroll
+}
+function showLanding(){
+  CURRENT = null;
+  setDrawer(false);
+  document.body.classList.remove("in-app");
+  window.scrollTo({ top:0, behavior:"instant" });
+}
+function onHistory(){
+  const v = location.hash.slice(1);
+  if(!v) showLanding();
+  else if(v !== CURRENT) go(v, { fromHistory:true });
+}
+
+/* ===================== MOBILE DRAWER ===================== */
+function setDrawer(open){
+  document.body.classList.toggle("drawer-open", open);
+  $("[data-drawer]")?.setAttribute("aria-expanded", String(open));
+}
+
+/* Feed tabs (Latest / Commons) */
+function setTab(name){
+  FILTER.tab = name;
+  $$("#feedTabs .tab").forEach(x=>x.classList.toggle("active", x.dataset.tab===name));
 }
 
 /* ===================== FLASH (toast) ===================== */
@@ -189,29 +266,80 @@ function flash(msg){
   clearTimeout(flashT); flashT=setTimeout(()=>el.classList.remove("show"), 3200);
 }
 
+/* ===================== IMAGE SHRINK ===================== */
+/* Phone photos are often 5-15 MB. Shrink them in the browser before upload:
+   faster on mobile data, and well under the server's 8 MB cap. The server
+   re-encodes anyway (that's where EXIF/GPS is stripped); this is only size.
+   If the browser can't decode the file, the original goes up unchanged. */
+async function shrinkImage(file, maxSide){
+  if(file.type === "image/gif") return file;          // keep it as is; the server handles it
+  try{
+    const bmp = await createImageBitmap(file, { imageOrientation:"from-image" });
+    const scale = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
+    if(scale === 1 && file.size < 1.5 * 1024 * 1024){ bmp.close?.(); return file; }
+    const c = document.createElement("canvas");
+    c.width = Math.round(bmp.width * scale); c.height = Math.round(bmp.height * scale);
+    const ctx = c.getContext("2d");
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);   // transparent PNG -> white, not black
+    ctx.drawImage(bmp, 0, 0, c.width, c.height); bmp.close?.();
+    const blob = await new Promise(r => c.toBlob(r, "image/jpeg", 0.88));
+    if(!blob) return file;
+    return new File([blob], (file.name || "photo").replace(/\.\w+$/, "") + ".jpg", { type:"image/jpeg" });
+  }catch(e){ return file; }
+}
+
 /* ===================== COMPOSE ===================== */
 function wireCompose(){
-  const file=$("#composeFile"), drop=$("#composeDrop");
-  if(!drop) return;
+  const form=$("#composeForm"), file=$("#composeFile"), drop=$("#composeDrop");
+  if(!form) return;
+  const aph=$("#cAph"), count=$("#cAphCount"), altRow=$("#cAltRow"), share=$("#composeShare");
+  const DROP_HTML = drop.innerHTML;
+  let picked = null;   // the photo to upload, already shrunk
+
+  $("#cTagsHint").textContent = "Themes: " + API.TAGS.map(t => t.slice(1).toLowerCase()).join(", ");
+  aph.addEventListener("input", ()=>{ count.textContent = aph.value.length; });
+
+  async function setImage(f){
+    if(!f) return;
+    if(!f.type.startsWith("image/")){ flash("That file isn't an image."); return; }
+    drop.textContent = "Preparing photo…";
+    picked = await shrinkImage(f, 2048);
+    drop.innerHTML = `<img src="${URL.createObjectURL(picked)}" alt="Selected photo preview"/>Photo ready. Tap to change it.`;
+    altRow.hidden = false;
+  }
   drop.addEventListener("click", ()=>file.click());
-  file.addEventListener("change", ()=>{
-    const f=file.files[0]; if(!f) return;
-    drop.innerHTML=`<img src="${URL.createObjectURL(f)}" alt="Selected image preview"/>Image ready.`;
-  });
-  $("#composeShare").addEventListener("click", async ()=>{
+  drop.addEventListener("keydown", e=>{ if(e.key==="Enter" || e.key===" "){ e.preventDefault(); file.click(); } });
+  file.addEventListener("change", ()=>setImage(file.files[0]));
+  drop.addEventListener("dragover", e=>{ e.preventDefault(); drop.classList.add("over"); });
+  drop.addEventListener("dragleave", ()=>drop.classList.remove("over"));
+  drop.addEventListener("drop", e=>{ e.preventDefault(); drop.classList.remove("over"); setImage(e.dataTransfer.files[0]); });
+
+  function resetCompose(){
+    form.reset(); picked = null;
+    drop.innerHTML = DROP_HTML; altRow.hidden = true; count.textContent = "0";
+  }
+  function busy(on){ share.disabled = on; share.textContent = on ? "Posting…" : "Share your idea"; }
+
+  form.addEventListener("submit", async (e)=>{
+    e.preventDefault();
     if(!requireApproval()) return;
-    const aphorism=$("#cAph").value.trim(), altText=$("#cAlt").value.trim();
-    if(!aphorism || !altText){ flash("Aphorism and alt text are required."); return; }
-    if(!LIVE){ flash("Demo mode: connect Supabase to publish for real."); return; }
+    const aphorism=aph.value.trim(), altText=$("#cAlt").value.trim();
+    if(!aphorism){ flash("Write your aphorism first."); aph.focus(); return; }
+    if(picked && !altText){ flash("Describe the photo in the alt text field."); $("#cAlt").focus(); return; }
+    if(!LIVE){ flash("Demo mode: connect a backend to publish for real."); return; }
+    busy(true);   // also blocks a second tap while the upload runs
     try{
       await API.createPost({
-        file:file.files[0], aphorism, altText,
+        file:picked, aphorism, altText,
         attribution:$("#cAttr").value.trim(),
-        tagLabels:$("#cTags").value.split(/\s+/)
+        tagLabels:$("#cTags").value.split(/[\s,]+/).filter(Boolean)
       });
-      flash("Posted ✦"); $("#composeForm").reset?.();
-      await loadFeed(); go("feed");
-    }catch(e){ flash("Could not post: "+e.message); }
+    }catch(err){ busy(false); flash("Could not post: " + err.message); return; }
+    // The post is saved. Nothing below may report "could not post".
+    busy(false); resetCompose(); flash("Posted ✦");
+    FILTER.tag = null; setTab("latest");
+    try{ await loadFeed(); }catch(err){ /* the feed refreshes on the next visit */ }
+    go("feed");
   });
 }
 
@@ -288,7 +416,7 @@ function wireSettings(){
   $("#setAvatarBtn").addEventListener("click", ()=>$("#setAvatarFile").click());
   $("#setAvatarFile").addEventListener("change", async ()=>{
     const f=$("#setAvatarFile").files[0]; if(!f || !needLive()) return;
-    try{ await Auth.uploadAvatar(f); populateSettings(); renderAuth(); flash("Avatar updated."); }
+    try{ await Auth.uploadAvatar(await shrinkImage(f, 1024)); populateSettings(); renderAuth(); flash("Avatar updated."); }
     catch(e){ flash("Could not upload: "+e.message); }
   });
   $("#setSaveProfile").addEventListener("click", async ()=>{
@@ -399,13 +527,42 @@ async function init(){
   await loadFeed();
   wireCompose(); wireJoin(); wireLogin(); wireSettings();
 
+  // Start where the URL says. Signed-in members skip the landing page.
+  const start = location.hash.slice(1);
+  if(VIEWS.includes(start)) go(start, { fromHistory:true });
+  else if(Auth.isSignedIn()){ history.replaceState(null, "", "#feed"); go("feed", { fromHistory:true }); }
+  window.addEventListener("popstate", onHistory);
+  window.addEventListener("hashchange", onHistory);
+  document.addEventListener("keydown", e=>{
+    if(e.key === "Escape") setDrawer(false);
+    const t = e.target.closest?.("[data-tile]");
+    if(t && (e.key === "Enter" || e.key === " ")){ e.preventDefault(); showPost(t.dataset.tile); }
+  });
+
   // delegated clicks: navigation, theme, auth, reactions, admin
   document.addEventListener("click", async (e)=>{
     const nav=e.target.closest("[data-go]");
     if(nav){ e.preventDefault(); go(nav.dataset.go); return; }
+    if(e.target.closest("[data-drawer]")){ setDrawer(!document.body.classList.contains("drawer-open")); return; }
+    if(e.target.closest("[data-drawer-close]")){ setDrawer(false); return; }
     if(e.target.closest("[data-theme-toggle]")){ toggleTheme(); return; }
     if(e.target.closest("[data-auth='logout']")){
       await Auth.signOut(); renderAuth(); await loadFeed(); go("feed"); flash("Logged out."); return;
+    }
+    const tileEl=e.target.closest("[data-tile]");
+    if(tileEl){ showPost(tileEl.dataset.tile); return; }
+    const tagEl=e.target.closest("[data-tag]");
+    if(tagEl){ FILTER.tag = tagEl.dataset.tag; setTab("latest"); go("feed"); renderFeed(); return; }
+    if(e.target.closest("[data-clear-filter]")){ FILTER.tag = null; renderFeed(); return; }
+    const del=e.target.closest("[data-delpost]");
+    if(del){
+      if(!confirm("Delete this post? This can't be undone.")) return;
+      try{
+        await API.deletePost(del.dataset.delpost);
+        FEED = FEED.filter(p => String(p.id) !== del.dataset.delpost);
+        renderFeed(); renderGrids(); flash("Post deleted.");
+      }catch(err){ flash("Could not delete: " + err.message); }
+      return;
     }
     const disc=e.target.closest(".act.discuss");
     if(disc){ await toggleComments(disc.dataset.post); return; }
@@ -414,9 +571,15 @@ async function init(){
     const react=e.target.closest(".act[data-kind]");
     if(react){ await onReact(react); return; }
     const ap=e.target.closest("[data-approve]");
-    if(ap){ await API.approveApplication(ap.dataset.approve); flash("Approved ✦"); renderAdmin(); return; }
+    if(ap){
+      try{ await API.approveApplication(ap.dataset.approve); flash("Approved ✦"); }catch(err){ flash(err.message); }
+      renderAdmin(); return;
+    }
     const rj=e.target.closest("[data-reject]");
-    if(rj){ await API.rejectApplication(rj.dataset.reject); flash("Rejected"); renderAdmin(); return; }
+    if(rj){
+      try{ await API.rejectApplication(rj.dataset.reject); flash("Rejected"); }catch(err){ flash(err.message); }
+      renderAdmin(); return;
+    }
     const bl=e.target.closest("[data-block]");
     if(bl){ try{ await API.blockUser(bl.dataset.block); flash("Member blocked."); }catch(err){ flash(err.message); } renderUsers(); return; }
     const ub=e.target.closest("[data-unblock]");
@@ -432,10 +595,7 @@ async function init(){
   });
 
   $$("#feedTabs .tab").forEach(t=>t.addEventListener("click",()=>{
-    $$("#feedTabs .tab").forEach(x=>x.classList.remove("active"));
-    t.classList.add("active");
-    renderFeed(t.dataset.tab==="commons"
-      ? (p)=>["#Commons","#Care","#Energy"].includes(p.tag) : null);
+    setTab(t.dataset.tab); renderFeed();
   }));
 }
 

@@ -1,9 +1,9 @@
 /* Instagramsci — authentication layer (mode-aware).
    Routes to the Python REST API (postgres), Supabase, or demo. Exposes a single
    interface to the app: profile with is_approved / is_admin. */
-import { MODE } from "./config.js";
-import { supabase } from "./supabase.js";
-import { req, setToken, getToken } from "./rest.js";
+import { MODE } from "./config.js?v=20260927";
+import { supabase } from "./supabase.js?v=20260927";
+import { req, setToken, getToken } from "./rest.js?v=20260927";
 
 let _profile = null;
 
@@ -25,7 +25,8 @@ async function pgSignIn({ email, password, code }){
 async function pgInit(){
   if(!getToken()) return null;
   try { _profile = (await req("/me", { auth:true })).profile; }
-  catch(e){ setToken(null); _profile = null; }
+  catch(e){ _profile = null; }
+  if(!_profile) setToken(null);   // expired or revoked token: drop it
   return _profile;
 }
 
@@ -109,7 +110,9 @@ export async function changeEmail({ email, password }){
 }
 export async function changePassword({ current_password, new_password }){
   if(!PG()) return { demo:true };
-  return req("/me/password", { method:"POST", body:{ current_password, new_password }, auth:true });
+  const d = await req("/me/password", { method:"POST", body:{ current_password, new_password }, auth:true });
+  if(d.token) setToken(d.token);   // other devices are logged out; this one keeps going
+  return d;
 }
 export async function twofaSetup(){
   if(!PG()) return { demo:true };

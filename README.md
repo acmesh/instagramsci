@@ -9,7 +9,7 @@ Every post pairs an **image** with an **aphorism** — a sharp, shareable idea. 
 This is a static site, but it uses **JavaScript ES modules**, which browsers block over `file://`. Serve it over HTTP:
 
 ```bash
-cd Instagramsci
+cd Instagramsci/public
 python3 -m http.server 8000
 # then open http://localhost:8000
 ```
@@ -19,23 +19,29 @@ python3 -m http.server 8000
 ## Structure
 
 ```
-index.html        Page shell + all views (feed, explore, compose, profile, manifesto)
-css/tokens.css    Design tokens — palette sampled from the Gramsci artwork
-css/styles.css    Components & layout
-js/data.js        Seed content (post shape mirrors the Supabase schema)
-js/app.js         Rendering + view switching + reactions
-assets/           Brand artwork (instagramsci.jpg)
-js/config.js      Backend config — paste your Supabase URL + anon key here
-js/supabase.js    Supabase client (loaded from CDN; sets LIVE flag)
-js/auth.js        Signup / login / logout + profile (approval, admin)
-js/api.js         Feed, posting, reactions, approvals — live OR demo fallback
-assets/logo.svg   Logo mark (ochre star / aperture roundel)
-supabase/schema.sql  Tables, RLS, triggers, approval RPCs, feed view, storage
-supabase/seed.sql    Tags + pinned first post
-ARCHITECTURE.md   Site map, data model, build phases, migration path
-STYLE_GUIDE.md    Full design system
-DEPLOY.md         Self-hosting the site on your Devuan/Linux server (nginx/apache)
-SETUP_SUPABASE.md Self-hosting Supabase (Docker) + going live
+public/                 Everything the browser loads. The ONLY web-visible folder.
+  index.html            Page shell + all views (feed, explore, compose, profile, manifesto)
+  css/tokens.css        Design tokens — palette sampled from the Gramsci artwork
+  css/styles.css        Components & layout (mobile: bottom bar + slide-out menu)
+  js/config.js          Backend config — API_BASE for the Python API, or Supabase keys
+  js/app.js             Rendering, view routing (#feed, #compose…), composer, admin pages
+  js/api.js             Feed, posting, reactions, approvals — live OR demo fallback
+  js/auth.js            Signup / login / logout + profile (approval, admin)
+  js/rest.js            fetch wrapper for the Python API
+  js/data.js            Seed content for demo mode
+  js/supabase.js        Supabase client (loaded from CDN only in Supabase mode)
+  assets/               Brand artwork (instagramsci.jpg, logo.svg)
+backend/                Python API (Flask + PostgreSQL). Never web-visible.
+  app.py                Auth, posts, uploads (re-encoded with Pillow), admin
+  schema.sql            Tables + feed view for a fresh install
+  migrate_*.sql         Upgrades for an existing database
+  instagramsci.apache.conf / instagramsci-api.init   Web server + service config
+supabase/               Optional Supabase backend (schema + RLS)
+ARCHITECTURE.md         Site map, data model, build phases, migration path
+STYLE_GUIDE.md          Full design system
+DEPLOY.md               Server layout, uploading, updating
+SETUP_POSTGRES.md       Database + API setup, step by step
+SETUP_SUPABASE.md       Self-hosting Supabase (Docker) + going live
 ```
 
 ## Backend (Phase 2)
@@ -70,6 +76,11 @@ page, which unlocks posting for that member.
 - **Reactions** (Resonate / Collect / Amplify): persist per user — your choices stay highlighted across reloads
 - **Comments**: Discuss opens a thread under each post; approved members can reply
 - **Admin tools**: review applications, and a Members page to block/unblock or delete approved users
+- **Notes and photos**: posts work with or without a photo; phones shrink photos before upload
+- **Delete posts**: authors delete their own posts, admins delete any
+- **Mobile layout**: bottom bar, slide-out menu, a URL per view (back gesture and reload work)
+- **Security**: uploads are decoded and re-encoded (EXIF/GPS stripped, random names);
+  login and signup are rate-limited; password change or block logs out every device
 
 ## The first post
 
